@@ -1,0 +1,60 @@
+name: Run Evaluation Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    env:
+      EVAL_SERVICE_URL: http://localhost:8000
+
+    services:
+      docker:
+        image: docker:24-dind
+        privileged: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 20
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+
+      - name: Install dependencies
+        run: |
+          cd eval_engine && python -m pip install --upgrade pip
+          cd eval_engine && pip install --no-cache-dir -r requirements.txt
+          npm install
+
+      - name: Build evaluation service image
+        run: |
+          docker build -t genai-eval-service ./eval_engine
+
+      - name: Start evaluation service container
+        run: |
+          docker run -d --rm --name genai-eval-service -p 8000:8000 genai-eval-service
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps
+
+      - name: Run Playwright tests for genai matrix
+        run: npx playwright test tests/genai --project=chromium
+
+      - name: Stop evaluation service container
+        if: always()
+        run: docker stop genai-eval-service
